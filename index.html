@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Free Multi-AI Comparison</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .chat-box { height: 450px; overflow-y: auto; border: 1px solid #374151; border-radius: 12px; padding: 15px; background: #0f172a; font-size: 0.9rem; scroll-behavior: smooth; }
+        .user-msg { color: #38bdf8; font-weight: bold; margin-top: 15px; font-size: 0.75rem; letter-spacing: 0.05em; }
+        .ai-msg { color: #f1f5f9; margin-bottom: 25px; white-space: pre-wrap; line-height: 1.6; border-left: 2px solid #334155; padding-left: 10px; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 p-4 font-sans">
+
+    <div class="max-w-7xl mx-auto">
+        <header class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-xl">
+            <div>
+                <h1 class="text-2xl font-black bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">FREE MULTI-AI</h1>
+                <p class="text-xs text-slate-500 font-medium uppercase tracking-widest">Zero-Cost Model Testing</p>
+            </div>
+            
+            <div class="flex gap-3 items-center">
+                <select id="modelSelector" class="bg-slate-800 text-sm p-2.5 rounded-lg border border-slate-700 outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash (Free)</option>
+                    <option value="meta-llama/llama-3.1-8b-instruct:free">Llama 3.1 8B (Free)</option>
+                    <option value="mistralai/pixtral-12b:free">Pixtral 12B (Free)</option>
+                    <option value="qwen/qwen-2-7b-instruct:free">Qwen 2 7B (Free)</option>
+                    <option value="microsoft/phi-3-medium-128k-instruct:free">Phi-3 Medium (Free)</option>
+                </select>
+                <button onclick="addModel()" class="bg-emerald-600 hover:bg-emerald-500 px-5 py-2.5 rounded-lg text-sm font-bold transition-all shadow-lg shadow-emerald-900/20">Add</button>
+                <button onclick="updateKey()" class="bg-slate-700 hover:bg-slate-600 px-5 py-2.5 rounded-lg text-sm font-bold transition-all">Set Key</button>
+            </div>
+        </header>
+
+        <div id="chatGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-32">
+            </div>
+
+        <div class="fixed bottom-0 left-0 w-full bg-slate-950/80 backdrop-blur-md border-t border-slate-800 p-6">
+            <div class="max-w-4xl mx-auto flex gap-3">
+                <input type="text" id="userInput" placeholder="Send a message to all active free models..." 
+                       class="flex-1 p-4 rounded-xl bg-slate-900 border border-slate-700 focus:ring-2 focus:ring-blue-500 outline-none placeholder:text-slate-600 shadow-inner">
+                <button onclick="askAll()" class="bg-blue-600 hover:bg-blue-500 px-10 rounded-xl font-bold transition-all transform active:scale-95 shadow-lg shadow-blue-900/40">Send</button>
+                <button onclick="clearAll()" class="bg-slate-800 hover:bg-slate-700 px-5 rounded-xl font-medium transition-all">Clear</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let API_KEY = localStorage.getItem('openrouter_key');
+        // Default models that load on start
+        let activeModels = ['google/gemini-2.0-flash-exp:free', 'meta-llama/llama-3.1-8b-instruct:free'];
+
+        function updateKey() {
+            const newKey = prompt("Enter your FREE OpenRouter API Key:", API_KEY || "");
+            if (newKey) {
+                localStorage.setItem('openrouter_key', newKey);
+                API_KEY = newKey;
+                location.reload(); // Refresh to apply
+            }
+        }
+
+        function addModel() {
+            const model = document.getElementById('modelSelector').value;
+            if (activeModels.length >= 6) {
+                alert("Let's stick to 6 models at a time for performance!");
+                return;
+            }
+            if (!activeModels.includes(model)) {
+                activeModels.push(model);
+                renderGrid();
+            }
+        }
+
+        function removeModel(index) {
+            activeModels.splice(index, 1);
+            renderGrid();
+        }
+
+        function renderGrid() {
+            const grid = document.getElementById('chatGrid');
+            grid.innerHTML = '';
+            
+            activeModels.forEach((model, index) => {
+                const boxId = `box-${index}`;
+                const displayName = model.split('/')[1].replace(':free', '').toUpperCase();
+                
+                grid.innerHTML += `
+                    <div class="flex flex-col animate-in fade-in duration-500">
+                        <div class="flex justify-between items-center mb-2 px-1">
+                            <span class="text-[10px] font-black tracking-widest text-slate-500">${displayName}</span>
+                            <button onclick="removeModel(${index})" class="text-rose-500 hover:text-rose-400 text-[10px] font-bold uppercase tracking-tighter">Remove</button>
+                        </div>
+                        <div id="${boxId}" class="chat-box"></div>
+                    </div>
+                `;
+            });
+        }
+
+        async function fetchAIResponse(modelName, targetElementId, prompt) {
+            const displayBox = document.getElementById(targetElementId);
+            displayBox.innerHTML += `<div class="user-msg">PROMPT</div><div class="ai-msg">${prompt}</div>`;
+            displayBox.innerHTML += `<div class="user-msg">RESPONSE</div>`;
+            
+            const responseContainer = document.createElement("div");
+            responseContainer.className = "ai-msg";
+            displayBox.appendChild(responseContainer);
+
+            try {
+                const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${API_KEY}`,
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": window.location.href,
+                        "X-Title": "Free Multi-AI"
+                    },
+                    body: JSON.stringify({
+                        "model": modelName,
+                        "messages": [{ "role": "user", "content": prompt }],
+                        "stream": true
+                    })
+                });
+
+                if (!response.ok) throw new Error("Check your Key or Credits");
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split("\n");
+                    for (const line of lines) {
+                        if (line.startsWith("data: ")) {
+                            const data = line.slice(6);
+                            if (data === "[DONE]") break;
+                            try {
+                                const content = JSON.parse(data).choices[0].delta.content || "";
+                                responseContainer.innerText += content;
+                                displayBox.scrollTop = displayBox.scrollHeight;
+                            } catch (e) {}
+                        }
+                    }
+                }
+            } catch (error) {
+                responseContainer.innerHTML = `<span class="text-rose-500">Error: ${error.message}. Make sure you have set a valid API key.</span>`;
+            }
+        }
+
+        function askAll() {
+            const input = document.getElementById('userInput');
+            const val = input.value;
+            if (!val) return;
+            if (!API_KEY) {
+                updateKey();
+                return;
+            }
+            input.value = '';
+            activeModels.forEach((model, index) => {
+                fetchAIResponse(model, `box-${index}`, val);
+            });
+        }
+
+        function clearAll() {
+            activeModels.forEach((_, index) => {
+                const box = document.getElementById(`box-${index}`);
+                if (box) box.innerHTML = '';
+            });
+        }
+
+        document.getElementById("userInput").addEventListener("keypress", (e) => {
+            if (e.key === "Enter") askAll();
+        });
+
+        renderGrid();
+    </script>
+</body>
+</html>
